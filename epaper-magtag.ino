@@ -1,28 +1,29 @@
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// Copyright 2021 Far Out Labs.  All rights reserved.
+//      This material is the confidential trade secret and proprietary
+//      information of FOLabs.  It may not be reproduced, used,
+//      sold or transferred to any third party without the prior written
+//      consent of FOLabs.  All rights reserved.
+//
+///////////////////////////////////////////////////////////////////////////////
+
+/*  History:
+
+13sept21 alx Cleaned up for the public
+
+*/
+
+
 // Set Arduino Board to "Adafruit ESP32 MagTag 2.9"" - all defaults...
-
-
-/***************************************************
-  This is our Bitmap drawing example for the Adafruit EPD Breakout and Shield
-  ----> http://www.adafruit.com/products/3625
-  Check out the links above for our tutorials and wiring diagrams
-  Adafruit invests time and resources providing this open source code,
-  please support Adafruit and open-source hardware by purchasing
-  products from Adafruit!
-  Written by Limor Fried/Ladyada for Adafruit Industries.
-  MIT license, all text above must be included in any redistribution
-
-
-  THE BMP IMAGE YOU ARE USING MUST BE THE SAME DIMENSIONS AS YOUR EPD DISPLAY
-  For the 1.54" EPD, this is 152x152 pixels
-  For the 2.13" EPD, this is 104x212 pixels
- ****************************************************/
 
 #include <SPI.h>
 #include <Wire.h>
 #include <time.h>
 
 #include "Adafruit_ThinkInk.h"
-#include <Adafruit_GFX.h>    // Core graphics library
+#include <Adafruit_GFX.h>
 #include <Adafruit_NeoPixel.h>
 #include <U8g2_for_Adafruit_GFX.h>
 
@@ -35,25 +36,24 @@
 
 
 // define this to have the device go to sleep instead of going idle.  Wake with the A button.
+// note really well tested-  use at your own risk...
 //#define SLEEP_ENABLED
 
 
-#define EPD_CS     8
-#define EPD_DC     7
-#define SRAM_CS    -1
-#define EPD_RESET  6   // can set to -1 and share with microcontroller Reset!
-#define EPD_BUSY   5   // can set to -1 to not use a pin (will wait a fixed delay)
-#define SD_CS      -1
-#define CONNECTED
-#define VREF_PIN   4
+#define EPD_CS           8
+#define EPD_DC           7
+#define SRAM_CS         -1
+#define EPD_RESET        6   // can set to -1 and share with microcontroller Reset!
+#define EPD_BUSY         5   // can set to -1 to not use a pin (will wait a fixed delay)
+#define SD_CS           -1
+#define VREF_PIN         4
 #define NEOPIX_POWER_PIN GPIO_NUM_21
 #define NEOPIX_PIN       GPIO_NUM_1
 
-#define kPadding   3
 #define BATTERY_VID_THRESHOLD 50   // percent
 #define LOW_BATTERY_THRESHOLD 10   // percent
 
-#define PIXEL_COUNT       4     // Number of NeoPixels
+#define PIXEL_COUNT       4        // Number of NeoPixels on MagTag
 #define PIXEL_BRIGHTNESS 16
 
 #define BUTTON_A GPIO_NUM_15
@@ -61,21 +61,17 @@
 #define BUTTON_C GPIO_NUM_12
 #define BUTTON_D GPIO_NUM_11
 
-// hack
-#ifndef GxEPD_BLACK
-#define GxEPD_BLACK EPD_BLACK
-#endif 
+#define kFoodIconWidth        74
+#define kFoodIconHeight       74
 
-#define kFoodIconWidth  74
-#define kFoodIconHeight 74
+#define kTimeoutThresholdSecs 8
 
 
-struct Button 
+typedef struct
 {
     const uint8_t PIN;
     bool          pressed;
-};
-
+} ButtonRecord;
 
 typedef struct
 {
@@ -83,7 +79,8 @@ typedef struct
   uint8_t min;
   uint8_t sec;
   uint8_t day;
-} timeRecord;
+} TimeRecord;
+
 
 enum button_state 
 { 
@@ -93,38 +90,32 @@ enum button_state
   kFoodDinnerBit    = 1 << 3 
 };
 
+enum alignment
+{
+  LEFT, 
+  RIGHT, 
+  CENTER
+};
 
-enum alignmentType {LEFT, RIGHT, CENTER};
 
-static const char*    ssid     = STASSID;
-static const char*    password = STAPSK;
+static const char* s_ssid     = STASSID;
+static const char* s_password = STAPSK;
 
-static const char* Timezone           = "PST8PDT,M3.2.0,M11.1.0";
-static const char* ntpServer          = "pool.ntp.org";
-static int         gmtOffset_sec      = -25200; // GMT Offset is 0, for US (-5Hrs) is typically -18000, AU is typically (+8hrs) 28800
-static int         daylightOffset_sec = 3600;   // In the US/UK DST is +1hr or 3600-secs, other countries may use 2hrs 7200 or 30-mins 1800 or 5.5hrs 19800 Ahead of GMT use + offset behind - offset
+static const char* s_timezone            = "PST8PDT,M3.2.0,M11.1.0";
+static const char* s_ntp_server          = "pool.ntp.org";
+static int         s_gmt_offset_sec      = -25200; // GMT Offset is 0, for US (-5Hrs) is typically -18000, AU is typically (+8hrs) 28800
+static int         s_daylight_offset_sec = 3600;   // In the US/UK DST is +1hr or 3600-secs, other countries may use 2hrs 7200 or 30-mins 1800 or 5.5hrs 19800 Ahead of GMT use + offset behind - offset
 
 static long s_sleep_duration_mins = 60;  // Sleep time in minutes (1 hour so that we can reset the states promptly at midnight)
 static int  s_wifi_signal = 0;
 
 static String     s_date_str;
 static uint8_t    s_startup_day    = 0;
-static timeRecord s_last_update    = {};
-static timeRecord s_last_snack     = {};
-static timeRecord s_last_breakfast = {};
-static timeRecord s_last_lunch     = {};
-static timeRecord s_last_dinner    = {};
-
-static int kTimeoutThresholdSecs   = 8; // seconds
-
-RTC_DATA_ATTR uint8_t rtc_button_state = 0;
-RTC_DATA_ATTR uint8_t rtc_snack_count  = 0;
-
-
-RTC_DATA_ATTR Button button1 = { BUTTON_A, false };
-RTC_DATA_ATTR Button button2 = { BUTTON_B, false };
-RTC_DATA_ATTR Button button3 = { BUTTON_C, false };
-RTC_DATA_ATTR Button button4 = { BUTTON_D, false };
+static TimeRecord s_last_update    = {};
+static TimeRecord s_last_snack     = {};
+static TimeRecord s_last_breakfast = {};
+static TimeRecord s_last_lunch     = {};
+static TimeRecord s_last_dinner    = {};
 
 static const char* kFoodSnack     = "Snack";
 static const char* kFoodBreakfast = "Breakfast";
@@ -134,23 +125,31 @@ static const char* kFoodDinner    = "Dinner";
 static bool s_idle = false;
 static bool s_display_needs_refresh = false;
 
+RTC_DATA_ATTR uint8_t rtc_button_state = 0;
+RTC_DATA_ATTR uint8_t rtc_snack_count  = 0;
+
+RTC_DATA_ATTR ButtonRecord button1 = { BUTTON_A, false };
+RTC_DATA_ATTR ButtonRecord button2 = { BUTTON_B, false };
+RTC_DATA_ATTR ButtonRecord button3 = { BUTTON_C, false };
+RTC_DATA_ATTR ButtonRecord button4 = { BUTTON_D, false };
+
 #ifdef SLEEP_ENABLED
 RTC_DATA_ATTR bool rtc_booted = false;
 #endif
 
 // static classes
-Adafruit_NeoPixel strip(PIXEL_COUNT, NEOPIX_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip( PIXEL_COUNT, NEOPIX_PIN, NEO_GRB + NEO_KHZ800 );
 
 // 2.9" Grayscale Featherwing or Breakout:
-ThinkInk_290_Grayscale4_T5 display(EPD_DC, EPD_RESET, EPD_CS, SRAM_CS, EPD_BUSY);
+ThinkInk_290_Grayscale4_T5 display( EPD_DC, EPD_RESET, EPD_CS, SRAM_CS, EPD_BUSY );
 
 U8G2_FOR_ADAFRUIT_GFX u8g2Fonts;  // Select u8g2 font from here: https://github.com/olikraus/u8g2/wiki/fntlistall
 
 
+//#########################################################################################
 // code
 
-
-void drawString(int x, int y, String text, alignmentType alignment) 
+void drawString( int x, int y, String text, alignment alignment ) 
 {
   int16_t  x1, y1; //the bounds of x,y and w and h of the variable 'text' in pixels.
   uint16_t w, h;
@@ -163,7 +162,7 @@ void drawString(int x, int y, String text, alignmentType alignment)
 }
 
 
-void drawTime( int x, int y, timeRecord* tm )  
+void drawTime( int x, int y, TimeRecord* tm )  
 {
   int16_t  x1, y1; //the bounds of x,y and w and h of the variable 'text' in pixels.
   uint16_t w, h;
@@ -193,19 +192,19 @@ uint16_t getTextWidth( String text )
 }
 
 
-boolean SetupTime() 
+boolean setupTime() 
 {
-  configTime( gmtOffset_sec, daylightOffset_sec, ntpServer, "time.nist.gov"); //(gmtOffset_sec, daylightOffset_sec, ntpServer)
-  setenv("TZ", Timezone, 1);  //setenv()adds the "TZ" variable to the environment with a value TimeZone, only used if set to 1, 0 means no change
+  configTime( s_gmt_offset_sec, s_daylight_offset_sec, s_ntp_server, "time.nist.gov");
+  setenv("TZ", s_timezone, 1);  //setenv()adds the "TZ" variable to the environment with a value TimeZone, only used if set to 1, 0 means no change
   tzset(); // Set the TZ environment variable
   delay(100);
-  bool TimeStatus = UpdateLocalTime();
+  bool TimeStatus = updateLocalTime();
   s_startup_day = s_last_update.day;
   return TimeStatus;
 }
 
 
-boolean UpdateLocalTime() 
+boolean updateLocalTime() 
 {
   struct tm timeinfo;
   char   time_output[30], day_output[30], update_time[30];
@@ -229,7 +228,7 @@ boolean UpdateLocalTime()
 }
 
 
-bool CheckForTimeout()
+bool checkForTimeout()
 {
   struct tm timeinfo;
   while( !getLocalTime( &timeinfo, 5000 ) ) 
@@ -259,19 +258,7 @@ bool CheckForTimeout()
 }
 
 
-void Blink(byte PIN, int DELAY_MS, byte loops)
-{
-  for (byte i = 0; i < loops; i++)
-  {
-    digitalWrite(PIN, LOW);
-    delay(DELAY_MS);
-    digitalWrite(PIN, HIGH);
-    delay(DELAY_MS);
-  }
-}
-
-
-void GoIdle()
+void goIdle()
 {
   if( s_idle )
     return;
@@ -287,9 +274,9 @@ void GoIdle()
 }
 
 
-void BeginSleep()
+void beginSleep()
 {
-  GoIdle();
+  goIdle();
 
   pinMode( LED_BUILTIN, INPUT );
 
@@ -303,18 +290,17 @@ void BeginSleep()
   // put microcontroller to sleep, wake up after specified time - just to update the date
   // button presses will also wake processor
   ESP.deepSleep( s_sleep_duration_mins * 60 * 1e6 );
-//  ESP.deepSleep( 1 * 60 * 1e6 );
 }
 
 
 void ARDUINO_ISR_ATTR isr( void* arg ) 
 {
-    Button* s = static_cast<Button*>(arg);
+    ButtonRecord* s = static_cast<ButtonRecord*>(arg);
     s->pressed = true;
 }
 
 
-void SetNeoPixelsColor( uint32_t color ) 
+void setNeoPixelsColor( uint32_t color ) 
 {
   for( int i=0; i < strip.numPixels(); i++ ) 
     strip.setPixelColor(i, color);          //  Set pixel's color (in RAM)
@@ -346,7 +332,7 @@ void theaterChase( uint32_t color, int wait )
 }
 
 
-void UpdateIconState( uint8_t foodBit, bool foodGiven )
+void updateIconState( uint8_t foodBit, bool foodGiven )
 {
   if( foodGiven )
     rtc_button_state |= foodBit;
@@ -359,11 +345,13 @@ void UpdateIconState( uint8_t foodBit, bool foodGiven )
 }
 
 
-bool GetIconState( uint8_t foodBit )
+bool getIconState( uint8_t foodBit )
 {
   return rtc_button_state & foodBit;
 }
 
+
+//#########################################################################################
 
 void setup(void)
 {
@@ -400,16 +388,14 @@ void setup(void)
 
   // only turn on lights if user woke us up...
   if( wakeup_reason != ESP_SLEEP_WAKEUP_TIMER )
-    SetNeoPixelsColor( strip.Color(127, 127, 127) );
+    setNeoPixelsColor( strip.Color(127, 127, 127) );
 #endif
   
   // draw first (without the date) so the device responds sooner
 //  draw_epd( false );
 
-#ifdef CONNECTED
-  StartWiFi(); // this routine keeps on trying in poor wifi conditions...
-  SetupTime();
-#endif
+  startWiFi(); // this routine keeps on trying in poor wifi conditions...
+  setupTime();
 
 #ifdef SLEEP_ENABLED
   // draw only once at boot time, the next time we start up, we don't need to update the screen
@@ -432,35 +418,35 @@ void loop()
   if( button1.pressed || button2.pressed || button3.pressed || button4.pressed )
   {
 #ifndef SLEEP_ENABLED
-    SetNeoPixelsColor( strip.Color(127, 127, 127) );
+    setNeoPixelsColor( strip.Color(127, 127, 127) );
     s_idle = false;
 #endif    
-    UpdateLocalTime();
+    updateLocalTime();
 
     // toggle the states
     if( button1.pressed )
     {
       s_last_snack = s_last_update;
       ++rtc_snack_count;
-      UpdateIconState( kFoodSnackBit, rtc_snack_count );
+      updateIconState( kFoodSnackBit, rtc_snack_count );
       button1.pressed = false;
     }      
     else if( button2.pressed )
     {
       s_last_breakfast = s_last_update;
-      UpdateIconState( kFoodBreakfastBit, !GetIconState( kFoodBreakfastBit ) );
+      updateIconState( kFoodBreakfastBit, !getIconState( kFoodBreakfastBit ) );
       button2.pressed = false;
     }
     else if( button3.pressed )
     {
       s_last_lunch = s_last_update;
-      UpdateIconState( kFoodLunchBit, !GetIconState( kFoodLunchBit ) );
+      updateIconState( kFoodLunchBit, !getIconState( kFoodLunchBit ) );
       button3.pressed = false;
     }
     else if( button4.pressed )
     {
       s_last_dinner = s_last_update;
-      UpdateIconState( kFoodDinnerBit, !GetIconState( kFoodDinnerBit ) );
+      updateIconState( kFoodDinnerBit, !getIconState( kFoodDinnerBit ) );
       button4.pressed = false;
     }
   }
@@ -472,8 +458,8 @@ void loop()
   }
 
   // after no activity, go idle-- !!@ in the future if we can detect we are on a battery, we would sleep here...
-  if( CheckForTimeout() )
-    GoIdle();
+  if( checkForTimeout() )
+    goIdle();
 }
 
 
@@ -560,14 +546,14 @@ void draw_epd( bool draw_date )
 
 //#########################################################################################
 
-uint8_t StartWiFi() 
+uint8_t startWiFi() 
 {
-    Serial.print("\nConnecting to: "); Serial.println( String( ssid ) );
+    Serial.print("\nConnecting to: "); Serial.println( String( s_ssid ) );
     WiFi.disconnect();
     WiFi.mode( WIFI_STA );
     WiFi.setAutoConnect( true );
     WiFi.setAutoReconnect( true );
-    WiFi.begin( ssid, password );
+    WiFi.begin( s_ssid, s_password );
     
     unsigned long start = millis();
     uint8_t       connectionStatus;
@@ -603,7 +589,7 @@ uint8_t StartWiFi()
 }
 
 
-void StopWiFi() 
+void stopWiFi() 
 {
   WiFi.disconnect();
   WiFi.mode( WIFI_OFF );
@@ -671,51 +657,6 @@ void drawBattery( int x, int y )
 //    u8g2Fonts.setFont( u8g2_font_tom_thumb_4x6_tf );
 //    drawString( x + 10, y - 11, String( percentage ) + "%", RIGHT );
 //    drawString( x + 13, y + 5,  String( voltage, 2 ) + "v", CENTER );
-  }
-}
-
-
-//#########################################################################################
-void drawBatteryV( int x, int y )
-{
-  uint8_t percentage = 100;
-//  float voltage = analogRead( VREF_PIN ) / 4096.0 * 7.46;
-  float voltage = 3.9;
-  if( voltage > 1 ) 
-  { 
-    // Only display if there is a valid reading
-    Serial.println( "Voltage = " + String( voltage ) );
-
-    int16_t color = EPD_BLACK;
-    
-    percentage = 2836.9625 * pow( voltage, 4 ) - 43987.4889 * pow( voltage, 3 ) + 255233.8134 * pow( voltage, 2 ) - 656689.7123 * voltage + 632041.7303;
-    if( voltage >= 4.20 ) 
-      percentage = 100;
-      
-    if( voltage <= 3.50 ) 
-      percentage = 0;
-
-    if( percentage < LOW_BATTERY_THRESHOLD )
-      color = EPD_RED;
-      
-    display.drawRect( x - 12, y + 15, 10, 19, EPD_BLACK );
-    display.fillRect( x - 10, y + 34, 5,   2, EPD_BLACK );
-    display.fillRect( x - 10, y + 17, 6, 15 * percentage / 100.0, color );
-    u8g2Fonts.setFont( u8g2_font_tom_thumb_4x6_tf );
-    drawString( x - 11, y + 10, String( percentage ) + "%", RIGHT );
-    drawString( x + 5,  y + 13, String( voltage, 2 ) + "v", CENTER );
-  }
-}
-
-
-void drawDottedLineV( int16_t x, int16_t y, int16_t h )
-{
-  int number_of_dashes = h / 2; // calculate this based on the line length divided by 2
-
-  // Draw dotted grid lines
-  for( int j = 0; j < number_of_dashes; j++ ) 
-  {     
-      display.drawFastVLine( x, y + (j * 2), 1, GxEPD_BLACK );
   }
 }
 
