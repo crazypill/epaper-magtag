@@ -399,6 +399,8 @@ void loop()
 #endif    
     updateLocalTime();
 
+    // we should debounce the switch by looking at the input PIN again to make sure it's still low. !!@
+
     // toggle the states
     if( button1.pressed )
     {
