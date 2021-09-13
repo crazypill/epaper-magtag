@@ -108,11 +108,12 @@ static long s_sleep_duration_mins = 60;  // Sleep time in minutes (1 hour so tha
 static int  s_wifi_signal = 0;
 
 static String     s_date_str;
-static timeRecord s_last_update    = {0};
-static timeRecord s_last_snack     = {0};
-static timeRecord s_last_breakfast = {0};
-static timeRecord s_last_lunch     = {0};
-static timeRecord s_last_dinner    = {0};
+static uint8_t    s_startup_day    = 0;
+static timeRecord s_last_update    = {};
+static timeRecord s_last_snack     = {};
+static timeRecord s_last_breakfast = {};
+static timeRecord s_last_lunch     = {};
+static timeRecord s_last_dinner    = {};
 
 static int kTimeoutThresholdSecs   = 8; // seconds
 
@@ -131,6 +132,7 @@ static const char* kFoodLunch     = "Lunch";
 static const char* kFoodDinner    = "Dinner";
 
 static bool s_idle = false;
+static bool s_display_needs_refresh = false;
 
 #ifdef SLEEP_ENABLED
 RTC_DATA_ATTR bool rtc_booted = false;
@@ -172,7 +174,7 @@ void drawTime( int x, int y, timeRecord* tm )
   timeInfo.tm_min  = tm->min;
   timeInfo.tm_sec  = tm->sec;
   timeInfo.tm_mday = tm->day;
-  strftime( update_time, sizeof( update_time ), "%H:%M", &timeInfo );
+  strftime( update_time, sizeof( update_time ), "%I:%M%p", &timeInfo );
   
   display.setTextWrap( false );
   display.getTextBounds( update_time, x, y, &x1, &y1, &w, &h );
@@ -198,6 +200,7 @@ boolean SetupTime()
   tzset(); // Set the TZ environment variable
   delay(100);
   bool TimeStatus = UpdateLocalTime();
+  s_startup_day = s_last_update.day;
   return TimeStatus;
 }
 
@@ -213,20 +216,13 @@ boolean UpdateLocalTime()
     return false;
   }
 
-  // check to see if we moved onto a new day...
-  if( s_last_update.day && (s_last_update.day != timeinfo.tm_mday) )
-  {
-    // reset all the icons...
-    rtc_button_state = 0;
-  }
-  
   s_last_update.hour = timeinfo.tm_hour;
   s_last_update.min  = timeinfo.tm_min;
   s_last_update.sec  = timeinfo.tm_sec;
   s_last_update.day  = timeinfo.tm_mday;
   Serial.println( &timeinfo, "%a %b %d %Y   %H:%M:%S" );      // Displays: Saturday, June 24 2017 14:05:49
-  
-  // see http://www.cplusplus.com/reference/ctime/strftime/
+
+// see http://www.cplusplus.com/reference/ctime/strftime/
   strftime(update_time, sizeof(update_time), "%A %B %e %Y", &timeinfo);    // Creates: 'Monday September  6 2021'
   s_date_str = update_time;
   return true;
@@ -243,17 +239,23 @@ bool CheckForTimeout()
     return false;
   }
 
-  // do a simple compare -- change this to simply convert everything to seconds and compare those... !!@
-  if( s_last_update.hour != timeinfo.tm_hour )
-    return true;
+  // check to see if we moved onto a new day...
+  if( s_startup_day && (timeinfo.tm_mday != s_startup_day) )
+  {
+    // reset all the icons...and date
+    Serial.println( "Processing date change: reseting all icons..." );
+    rtc_button_state = 0;
+    rtc_snack_count = 0;
+    s_startup_day = timeinfo.tm_mday;
+    s_display_needs_refresh = true;
+  }
 
-   if( (s_last_update.hour == timeinfo.tm_hour) && (timeinfo.tm_min - s_last_update.min > 1) )
-    return true;
+  // convert everything to seconds...
+  uint32_t thenSecs = (s_last_update.hour * 3600) + (s_last_update.min * 60) + s_last_update.sec;
+  uint32_t nowSecs  = (timeinfo.tm_hour * 3600) + (timeinfo.tm_min * 60) + timeinfo.tm_sec;
 
-   if( (s_last_update.min == timeinfo.tm_min) && (timeinfo.tm_sec - s_last_update.sec > kTimeoutThresholdSecs) )
-    return true;
-
-  return false;
+  // do a simple compare 
+  return (nowSecs - thenSecs) > kTimeoutThresholdSecs;
 }
 
 
@@ -352,7 +354,8 @@ void UpdateIconState( uint8_t foodBit, bool foodGiven )
     rtc_button_state &= ~foodBit;
 
   // now redraw the display...
-  draw_epd( true );
+  s_display_needs_refresh = true;
+//  draw_epd( true );
 }
 
 
@@ -440,7 +443,7 @@ void loop()
       s_last_snack = s_last_update;
       ++rtc_snack_count;
       UpdateIconState( kFoodSnackBit, rtc_snack_count );
-       button1.pressed = false;
+      button1.pressed = false;
     }      
     else if( button2.pressed )
     {
@@ -462,6 +465,12 @@ void loop()
     }
   }
 
+  if( s_display_needs_refresh )
+  {
+    draw_epd( true );
+    s_display_needs_refresh = false;
+  }
+
   // after no activity, go idle-- !!@ in the future if we can detect we are on a battery, we would sleep here...
   if( CheckForTimeout() )
     GoIdle();
@@ -479,7 +488,7 @@ void draw_epd( bool draw_date )
   display.drawBitmap( 0, -1, s_folabs_logo, 128, 32, EPD_BLACK );
 
   u8g2Fonts.setFont( u8g2_font_helvB10_tf );
-  drawString( 40, 12, "Far Out Labs", LEFT );
+  drawString( 40, 12, "Far Out Labs  --  Dog Food Tracker", LEFT );
 
 //  u8g2Fonts.setForegroundColor( EPD_RED );
 //  u8g2Fonts.setFont( u8g2_font_helvR08_tf );
@@ -496,7 +505,7 @@ void draw_epd( bool draw_date )
   drawString( centered, 40 + 75, String( "Snack" ), LEFT );
   if( rtc_snack_count )
   {
-      drawTime( centered, 40 + 65, &s_last_snack );
+      drawTime( centered - 6, 40 + 65, &s_last_snack );
       u8g2Fonts.setForegroundColor( EPD_GRAY );
       u8g2Fonts.setFont( u8g2_font_helvB10_tf );
       drawString( centered + 25, 56, String( rtc_snack_count ), LEFT );
@@ -511,7 +520,7 @@ void draw_epd( bool draw_date )
   display.drawBitmap( kFoodIconWidth, 40, bitmap, kFoodIconWidth, kFoodIconHeight, grey );
   drawString( kFoodIconWidth + centered + 6, 40 + 75, String( "Breakfast" ), LEFT );
   if( rtc_button_state & kFoodBreakfastBit )
-      drawTime( kFoodIconWidth + centered + 14, 40 + 65, &s_last_breakfast );
+      drawTime( kFoodIconWidth + centered + 7, 40 + 65, &s_last_breakfast );
   
   w = getTextWidth( "Lunch" );
   centered = (kFoodIconWidth - w) / 2;  
@@ -520,7 +529,7 @@ void draw_epd( bool draw_date )
   display.drawBitmap( kFoodIconWidth * 2, 40, bitmap, kFoodIconWidth, kFoodIconHeight, grey );
   drawString( kFoodIconWidth * 2 + centered, 40 + 75, String( "Lunch" ), LEFT );
   if( rtc_button_state & kFoodLunchBit )
-      drawTime( kFoodIconWidth * 2 + centered, 40 + 65, &s_last_lunch );
+      drawTime( kFoodIconWidth * 2 + centered - 6, 40 + 65, &s_last_lunch );
 
   w = getTextWidth( "Dinner" );
   centered = (kFoodIconWidth - w) / 2;  
@@ -529,7 +538,7 @@ void draw_epd( bool draw_date )
   display.drawBitmap( kFoodIconWidth * 3, 40, bitmap, kFoodIconWidth, kFoodIconHeight, grey );
   drawString( kFoodIconWidth * 3 + centered + 3, 40 + 75, String( "Dinner" ), LEFT );
   if( rtc_button_state & kFoodDinnerBit )
-      drawTime( kFoodIconWidth * 3 + centered + 3, 40 + 65, &s_last_dinner );
+      drawTime( kFoodIconWidth * 3 + centered - 3, 40 + 65, &s_last_dinner );
 
   // draw the date
   if( draw_date )
@@ -540,7 +549,7 @@ void draw_epd( bool draw_date )
   }
 
 //  drawRSSI( 230, 14, s_wifi_signal );
-  drawBattery( 255, 10 );
+//  drawBattery( 255, 10 );
 
   // send to e-paper display
   display.display();
