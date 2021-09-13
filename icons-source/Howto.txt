@@ -1,0 +1,8 @@
+Files are saved as 1 bit in PhotoShop as Portable Bitmap files.
+
+Output the file as hex:
+
+xxd --include /Users/alex/Desktop/Snack.pbm
+
+Then the first few bytes need to be removed up to the third space character (0xa0)...
+
