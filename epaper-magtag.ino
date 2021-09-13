@@ -36,7 +36,7 @@
 
 
 // define this to have the device go to sleep instead of going idle.  Wake with the A button.
-// note really well tested-  use at your own risk...
+// note: not really well tested-  use at your own risk...
 //#define SLEEP_ENABLED
 
 
@@ -459,7 +459,13 @@ void loop()
 
   // after no activity, go idle-- !!@ in the future if we can detect we are on a battery, we would sleep here...
   if( checkForTimeout() )
+  {
+#ifdef SLEEP_ENABLED
+    beginSleep();
+#else
     goIdle();
+#endif
+  }
 }
 
 
