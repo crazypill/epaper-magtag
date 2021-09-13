@@ -309,29 +309,6 @@ void setNeoPixelsColor( uint32_t color )
 }
 
 
-// Theater-marquee-style chasing lights. Pass in a color (32-bit value,
-// a la strip.Color(r,g,b) as mentioned above), and a delay time (in ms)
-// between frames.
-void theaterChase( uint32_t color, int wait ) 
-{
-  for( int a = 0; a < 10; a++ ) 
-  {  
-    // Repeat 10 times...
-    for( int b = 0; b < 3; b++ ) 
-    { 
-      //  'b' counts from 0 to 2...
-      strip.clear();         //   Set all pixels in RAM to 0 (off)
-      // 'c' counts up from 'b' to end of strip in steps of 3...
-      for( int c = b; c < strip.numPixels(); c += 3 ) 
-        strip.setPixelColor( c, color ); // Set pixel 'c' to value 'color'
-
-      strip.show(); // Update strip with new contents
-      delay( wait );  // Pause for a moment
-    }
-  }
-}
-
-
 void updateIconState( uint8_t foodBit, bool foodGiven )
 {
   if( foodGiven )
@@ -341,7 +318,6 @@ void updateIconState( uint8_t foodBit, bool foodGiven )
 
   // now redraw the display...
   s_display_needs_refresh = true;
-//  draw_epd( true );
 }
 
 
@@ -389,11 +365,11 @@ void setup(void)
   // only turn on lights if user woke us up...
   if( wakeup_reason != ESP_SLEEP_WAKEUP_TIMER )
     setNeoPixelsColor( strip.Color(127, 127, 127) );
+
+  // draw first (without the date) so the device responds sooner
+  draw_epd( false );
 #endif
   
-  // draw first (without the date) so the device responds sooner
-//  draw_epd( false );
-
   startWiFi(); // this routine keeps on trying in poor wifi conditions...
   setupTime();
 
@@ -481,10 +457,6 @@ void draw_epd( bool draw_date )
 
   u8g2Fonts.setFont( u8g2_font_helvB10_tf );
   drawString( 40, 12, "Far Out Labs  --  Dog Food Tracker", LEFT );
-
-//  u8g2Fonts.setForegroundColor( EPD_RED );
-//  u8g2Fonts.setFont( u8g2_font_helvR08_tf );
-//  drawString( 40 + 120, 10, "K6LOT-13", LEFT );
 
   u8g2Fonts.setForegroundColor( EPD_BLACK );
   u8g2Fonts.setFont( u8g2_font_helvR08_tf );
