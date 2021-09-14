@@ -228,7 +228,7 @@ boolean updateLocalTime()
 }
 
 
-bool checkForTimeout()
+bool checkForTimeoutAndReset()
 {
   struct tm timeinfo;
   while( !getLocalTime( &timeinfo, 5000 ) ) 
@@ -238,7 +238,7 @@ bool checkForTimeout()
     return false;
   }
 
-  // check to see if we moved onto a new day...
+  // check to see if we moved onto a new day... we do this here because we already got the current time
   if( s_startup_day && (timeinfo.tm_mday != s_startup_day) )
   {
     // reset all the icons...and date
@@ -436,7 +436,7 @@ void loop()
   }
 
   // after no activity, go idle-- !!@ in the future if we can detect we are on a battery, we would sleep here...
-  if( checkForTimeout() )
+  if( checkForTimeoutAndReset() )
   {
 #ifdef SLEEP_ENABLED
     beginSleep();
