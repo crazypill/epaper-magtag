@@ -192,7 +192,7 @@ uint16_t getTextWidth( String text )
 }
 
 
-boolean setupTime() 
+bool setupTime() 
 {
   configTime( s_gmt_offset_sec, s_daylight_offset_sec, s_ntp_server, "time.nist.gov");
   setenv("TZ", s_timezone, 1);  //setenv()adds the "TZ" variable to the environment with a value TimeZone, only used if set to 1, 0 means no change
@@ -204,7 +204,7 @@ boolean setupTime()
 }
 
 
-boolean updateLocalTime() 
+bool updateLocalTime() 
 {
   struct tm timeinfo;
   char   time_output[30], day_output[30], update_time[30];
